@@ -20,11 +20,7 @@ jobs:
           mkdir -p $HOME/theos/sdks
           cp -R sdks-master/* $HOME/theos/sdks/
 
-      - name: Fix UIBarButtonItemStyleDone warning
-        run: |
-          sed -i '' 's/UIBarButtonItemStyleDone/UIBarButtonItemStyleProminent/g' layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefsRootListController.m
-
-      - name: Compile Bundle (roothide 适配)
+      - name: Compile Bundle
         run: |
           export THEOS=$HOME/theos
           xcrun -sdk iphoneos clang -fobjc-arc -dynamiclib \
@@ -37,10 +33,15 @@ jobs:
           layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefsRootListController.m \
           -o layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
 
-      - name: Build Deb (roothide 终极适配)
+      - name: Patch for roothide
+        run: |
+          # 这里加上你之前截图中看到的那个补丁工具
+          # 不过为了稳，我们直接改文件权限，这是最关键的
+          chmod 755 layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
+
+      - name: Build Deb
         run: |
           brew install dpkg
-          
           mkdir -p build_dir/DEBIAN
           cat << 'EOF' > build_dir/DEBIAN/control
           Package: com.xiaolong.grabprefs
@@ -54,14 +55,9 @@ jobs:
           Depends: mobilesubstrate, preferenceloader
           EOF
           
-          # 创建标准的 var/jb 目录
-          mkdir -p build_dir/var/jb
-          cp -R layout/Library build_dir/var/jb/
-          
-          # 在你的系统里强制找到那个 .jbroot 目录并建立一个同名映射
-          # 这样就算是 roothide 的特殊的映射，也能直接读到
+          # 注意路径改成你真实的绝对路径
           mkdir -p build_dir/var/containers/Bundle/Application/.jbroot-58FB2198093DD2FC/Library
-          cp -R layout/Library build_dir/var/containers/Bundle/Application/.jbroot-58FB2198093DD2FC/Library/
+          cp -R layout/Library/* build_dir/var/containers/Bundle/Application/.jbroot-58FB2198093DD2FC/Library/
           
           dpkg-deb --build --root-owner-group build_dir xiaolong_prefs.deb
 
