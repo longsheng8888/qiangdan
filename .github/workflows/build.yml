@@ -20,13 +20,17 @@ jobs:
           mkdir -p $HOME/theos/sdks
           cp -R sdks-master/* $HOME/theos/sdks/
 
-      - name: Compile Bundle (Standard Theos)
+      - name: Fix UIBarButtonItemStyleDone warning
+        run: |
+          sed -i '' 's/UIBarButtonItemStyleDone/UIBarButtonItemStyleProminent/g' layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefsRootListController.m
+
+      - name: Compile Bundle (roothide 适配)
         run: |
           export THEOS=$HOME/theos
-          export PATH=$THEOS/bin:$PATH
-          
-          # 直接使用 Theos 的 clang 工具链编译 Bundle，自动解决 Preferences 依赖
-          clang -fobjc-arc -dynamiclib -framework Foundation -framework UIKit -framework Preferences \
+          # 核心：去掉 -framework Preferences，加上 -Wl,-undefined,dynamic_lookup
+          xcrun -sdk iphoneos clang -fobjc-arc -dynamiclib \
+          -framework Foundation -framework UIKit \
+          -Wl,-undefined,dynamic_lookup \
           -I$THEOS/include \
           -I$THEOS/vendor/include \
           -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
