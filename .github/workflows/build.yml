@@ -15,18 +15,26 @@ jobs:
         run: |
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          # 下载 Theos 的 SDK，里面包含私有头文件
+          curl -L https://github.com/theos/sdks/archive/master.zip -o sdks.zip
+          unzip -q sdks.zip
+          mkdir -p $HOME/theos/sdks
+          cp -R sdks-master/* $HOME/theos/sdks/
 
       - name: Compile Preference Bundle
         run: |
           export THEOS=$HOME/theos
-          # 获取 GitHub 官方 Mac 环境自带的 Xcode 真机 SDK 路径
-          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-          echo "Using SDK: $SDK_PATH"
+          # 手动指定越狱私有头文件路径
+          PRIVATE_HEADERS="$THEOS/vendor/include"
+          # 指定系统 SDK 路径（用系统自带的，保证链接不报错）
+          SYSROOT_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
           
+          # 开始编译
           xcrun -sdk iphoneos clang -fobjc-arc -dynamiclib \
           -framework Foundation -framework UIKit -framework Preferences \
+          -I$PRIVATE_HEADERS \
           -I$THEOS/include \
-          -isysroot "$SDK_PATH" \
+          -isysroot "$SYSROOT_PATH" \
           -arch arm64 -arch arm64e \
           layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefsRootListController.m \
           -o layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
