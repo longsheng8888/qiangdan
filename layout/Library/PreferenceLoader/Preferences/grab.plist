@@ -1,0 +1,7 @@
+{
+    entry = {
+        bundle = "GrabPrefs";
+        cell = "PSLinkCell";
+        label = "小龙生自动抢单";
+    };
+}
