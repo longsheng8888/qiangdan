@@ -1,0 +1,48 @@
+name: Build Prefs Deb
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          curl -L https://github.com/theos/sdks/archive/master.zip -o sdks.zip
+          unzip -q sdks.zip
+          mv sdks-master $HOME/theos/sdks
+
+      - name: Compile Preference Bundle
+        run: |
+          export THEOS=$HOME/theos
+          # 编译这个设置界面 Bundle
+          $THEOS/bin/logos.pl layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefsRootListController.m > layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefsRootListController.xm
+          clang -fobjc-arc -dynamiclib -framework Foundation -framework UIKit -framework Preferences -isysroot $THEOS/sdks/iPhoneOS14.5.sdk -arch arm64 -arch arm64e layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefsRootListController.m -o layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
+
+      - name: Build Deb
+        run: |
+          mkdir -p build_dir/DEBIAN
+          echo "Package: com.xiaolong.grabprefs" > build_dir/DEBIAN/control
+          echo "Name: 小龙生自动抢单" >> build_dir/DEBIAN/control
+          echo "Version: 1.0" >> build_dir/DEBIAN/control
+          echo "Architecture: iphoneos-arm64" >> build_dir/DEBIAN/control
+          echo "Description: 设置插件" >> build_dir/DEBIAN/control
+          echo "Maintainer: xiaolong" >> build_dir/DEBIAN/control
+          echo "Author: xiaolong" >> build_dir/DEBIAN/control
+          echo "Section: Tweaks" >> build_dir/DEBIAN/control
+          
+          cp -R layout/* build_dir/
+          dpkg-deb --build --root-owner-group build_dir xiaolong_prefs.deb
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Prefs-Deb
+          path: xiaolong_prefs.deb
