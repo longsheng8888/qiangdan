@@ -20,19 +20,16 @@ jobs:
           mkdir -p $HOME/theos/sdks
           cp -R sdks-master/* $HOME/theos/sdks/
 
-      - name: Compile Preference Bundle
+      - name: Compile Bundle (Standard Theos)
         run: |
           export THEOS=$HOME/theos
-          PRIVATE_HEADERS="$THEOS/vendor/include"
-          SYSROOT_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          export PATH=$THEOS/bin:$PATH
           
-          # 核心：加上了 -Wl,-undefined,dynamic_lookup 跳过强制链接
-          xcrun -sdk iphoneos clang -fobjc-arc -dynamiclib \
-          -framework Foundation -framework UIKit \
-          -Wl,-undefined,dynamic_lookup \
-          -I$PRIVATE_HEADERS \
+          # 直接使用 Theos 的 clang 工具链编译 Bundle，自动解决 Preferences 依赖
+          clang -fobjc-arc -dynamiclib -framework Foundation -framework UIKit -framework Preferences \
           -I$THEOS/include \
-          -isysroot "$SYSROOT_PATH" \
+          -I$THEOS/vendor/include \
+          -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
           -arch arm64 -arch arm64e \
           layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefsRootListController.m \
           -o layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
@@ -49,8 +46,8 @@ jobs:
           echo "Author: xiaolong" >> build_dir/DEBIAN/control
           echo "Section: Tweaks" >> build_dir/DEBIAN/control
           
-          mkdir -p build_dir/var/jb/Library
-          cp -R layout/Library/* build_dir/var/jb/Library/
+          mkdir -p build_dir/var/jb
+          cp -R layout/Library build_dir/var/jb/
           
           dpkg-deb --build --root-owner-group build_dir xiaolong_prefs.deb
 
