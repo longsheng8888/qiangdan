@@ -15,17 +15,18 @@ jobs:
         run: |
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-          # 下载 iOS SDK 并解压
+          
+          # 下载官方最新的 SDK 包
           curl -L https://github.com/theos/sdks/archive/master.zip -o sdks.zip
           unzip -q sdks.zip
           mkdir -p $HOME/theos/sdks
-          mv sdks-master/* $HOME/theos/sdks/
+          cp -R sdks-master/* $HOME/theos/sdks/
 
       - name: Compile Preference Bundle
         run: |
           export THEOS=$HOME/theos
-          # 自动查找当前实际存在的 SDK 版本目录名
-          SDK_PATH=$(find $THEOS/sdks -maxdepth 1 -name "iPhoneOS*.sdk" | head -n 1)
+          # 强制使用 16.5 版本的 SDK
+          SDK_PATH="$THEOS/sdks/iPhoneOS16.5.sdk"
           echo "Using SDK: $SDK_PATH"
           
           xcrun -sdk iphoneos clang -fobjc-arc -dynamiclib -framework Foundation -framework UIKit -framework Preferences \
@@ -36,7 +37,7 @@ jobs:
           layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefsRootListController.m \
           -o layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
 
-      - name: Build Deb
+      - name: Build Deb (roothide 路径适配)
         run: |
           mkdir -p build_dir/DEBIAN
           echo "Package: com.xiaolong.grabprefs" > build_dir/DEBIAN/control
@@ -48,7 +49,10 @@ jobs:
           echo "Author: xiaolong" >> build_dir/DEBIAN/control
           echo "Section: Tweaks" >> build_dir/DEBIAN/control
           
-          cp -R layout/* build_dir/
+          # 关键：因为你是 roothide，把设置文件放进 var/jb 目录下才能生效
+          mkdir -p build_dir/var/jb/Library
+          cp -R layout/Library/* build_dir/var/jb/Library/
+          
           dpkg-deb --build --root-owner-group build_dir xiaolong_prefs.deb
 
       - name: Upload Artifact
