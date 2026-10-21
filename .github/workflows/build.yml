@@ -27,7 +27,6 @@ jobs:
       - name: Compile Bundle (roothide 适配)
         run: |
           export THEOS=$HOME/theos
-          # 核心：去掉 -framework Preferences，加上 -Wl,-undefined,dynamic_lookup
           xcrun -sdk iphoneos clang -fobjc-arc -dynamiclib \
           -framework Foundation -framework UIKit \
           -Wl,-undefined,dynamic_lookup \
@@ -40,6 +39,9 @@ jobs:
 
       - name: Build Deb (roothide 路径适配)
         run: |
+          # 安装打包工具
+          brew install dpkg
+          
           mkdir -p build_dir/DEBIAN
           echo "Package: com.xiaolong.grabprefs" > build_dir/DEBIAN/control
           echo "Name: 小龙生自动抢单" >> build_dir/DEBIAN/control
