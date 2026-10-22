@@ -1,4 +1,4 @@
-name: Build Prefs Deb
+name: Build Native RootHide Prefs
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
         run: |
           export THEOS=$HOME/theos
           
-          # 1. 生成源码
+          # 1. 自动生成我们的源代码
           cat << 'EOF' > GrabPrefsRootListController.m
           #import <Preferences/PSListController.h>
           @interface GrabPrefsRootListController : PSListController
@@ -37,15 +37,18 @@ jobs:
               }
               return _specifiers;
           }
+          - (void)viewWillDisappear:(BOOL)animated {
+              [super viewWillDisappear:animated];
+              [self.view endEditing:YES];
+          }
           @end
           EOF
 
           # 2. 建目录
-          TARGET_DIR="build_dir/var/jb/Library"
-          mkdir -p "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle"
-          mkdir -p "$TARGET_DIR/PreferenceLoader/Preferences"
+          mkdir -p layout/Library/PreferenceBundles/GrabPrefs.bundle
+          mkdir -p layout/Library/PreferenceLoader/Preferences
           
-          # 3. 编译并链接
+          # 3. 编译并签名
           xcrun -sdk iphoneos clang -fobjc-arc -dynamiclib \
           -framework Foundation -framework UIKit \
           -Wl,-undefined,dynamic_lookup \
@@ -53,63 +56,33 @@ jobs:
           -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
           -arch arm64 -arch arm64e \
           GrabPrefsRootListController.m \
-          -o "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle/GrabPrefs"
+          -o layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
           
-          # 4. 写 Plist
-          cat << 'EOF' > "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle/Root.plist"
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>items</key>
-              <array>
-                  <dict>
-                      <key>cell</key><string>PSGroupCell</string>
-                      <key>label</key><string>基本设置</string>
-                  </dict>
-                  <dict>
-                      <key>cell</key><string>PSTextFieldSpecifier</string>
-                      <key>label</key><string>最低金额 (元)</string>
-                      <key>key</key><string>minFee</string>
-                      <key>default</key><string>7</string>
-                  </dict>
-                  <dict>
-                      <key>cell</key><string>PSTextFieldSpecifier</string>
-                      <key>label</key><string>最大距离 (km)</string>
-                      <key>key</key><string>maxDist</string>
-                      <key>default</key><string>5</string>
-                  </dict>
-              </array>
-          </dict>
-          </plist>
-          EOF
+          chmod 755 layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
+          ldid -S layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
+          
+          # 4. 拷贝配置文件
+          cp Root.plist layout/Library/PreferenceBundles/GrabPrefs.bundle/
+          cp GrabPrefs.plist layout/Library/PreferenceLoader/Preferences/
 
-          cat << 'EOF' > "$TARGET_DIR/PreferenceLoader/Preferences/GrabPrefs.plist"
-          { entry = { bundle = "GrabPrefs"; cell = "PSLinkCell"; label = "小龙生自动抢单"; }; }
-          EOF
-
-          # 5. 权限与签名
-          chmod 755 "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle/GrabPrefs"
-          ldid -S "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle/GrabPrefs"
-
-      - name: Build Deb
+      - name: Build RootHide Deb
         run: |
           brew install dpkg
           mkdir -p build_dir/DEBIAN
           
-          # 关键修改：加上了 roothide 标识，并且安装路径指定为 var/jb
           cat << 'EOF' > build_dir/DEBIAN/control
           Package: com.xiaolong.grabprefs
           Name: 小龙生自动抢单
           Version: 1.0
           Architecture: iphoneos-arm64
-          Description: 设置插件
+          Description: 抢单设置
           Maintainer: xiaolong
           Author: xiaolong
           Section: Tweaks
           Depends: mobilesubstrate, preferenceloader
-          THEOS_PACKAGE_SCHEME: roothide
           EOF
+          
+          cp -R layout/Library build_dir/
           
           dpkg-deb --build --root-owner-group build_dir xiaolong_prefs.deb
 
