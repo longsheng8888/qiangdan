@@ -20,24 +20,75 @@ jobs:
           mkdir -p $HOME/theos/sdks
           cp -R sdks-master/* $HOME/theos/sdks/
 
-      - name: Compile Bundle
+      - name: Create Source and Compile
         run: |
           export THEOS=$HOME/theos
+          
+          # 1. 直接在云端生成 .m 源码，你不建了！
+          cat << 'EOF' > GrabPrefsRootListController.m
+          #import <Preferences/PSListController.h>
+          @interface GrabPrefsRootListController : PSListController
+          @end
+          @implementation GrabPrefsRootListController
+          - (id)specifiers {
+              if (_specifiers == nil) {
+                  _specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
+              }
+              return _specifiers;
+          }
+          @end
+          EOF
+
+          # 2. 建目录
+          TARGET_DIR="build_dir/var/containers/Bundle/Application/.jbroot-58FB2198093DD2FC/Library"
+          mkdir -p "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle"
+          mkdir -p "$TARGET_DIR/PreferenceLoader/Preferences"
+          
+          # 3. 编译
           xcrun -sdk iphoneos clang -fobjc-arc -dynamiclib \
           -framework Foundation -framework UIKit \
           -Wl,-undefined,dynamic_lookup \
-          -I$THEOS/include \
-          -I$THEOS/vendor/include \
+          -I$THEOS/include -I$THEOS/vendor/include \
           -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
           -arch arm64 -arch arm64e \
-          layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefsRootListController.m \
-          -o layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
+          GrabPrefsRootListController.m \
+          -o "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle/GrabPrefs"
+          
+          # 4. 补全 Plist（如果你之前在根目录建了，这步会覆盖或生成）
+          cat << 'EOF' > "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle/Root.plist"
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>items</key>
+              <array>
+                  <dict>
+                      <key>cell</key><string>PSGroupCell</string>
+                      <key>label</key><string>基本设置</string>
+                  </dict>
+                  <dict>
+                      <key>cell</key><string>PSTextFieldSpecifier</string>
+                      <key>label</key><string>最低金额 (元)</string>
+                      <key>key</key><string>minFee</string>
+                      <key>default</key><string>7</string>
+                  </dict>
+                  <dict>
+                      <key>cell</key><string>PSTextFieldSpecifier</string>
+                      <key>label</key><string>最大距离 (km)</string>
+                      <key>key</key><string>maxDist</string>
+                      <key>default</key><string>5</string>
+                  </dict>
+              </array>
+          </dict>
+          </plist>
+          EOF
 
-      - name: Patch for roothide
-        run: |
-          # 这里加上你之前截图中看到的那个补丁工具
-          # 不过为了稳，我们直接改文件权限，这是最关键的
-          chmod 755 layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
+          cat << 'EOF' > "$TARGET_DIR/PreferenceLoader/Preferences/GrabPrefs.plist"
+          { entry = { bundle = "GrabPrefs"; cell = "PSLinkCell"; label = "小龙生自动抢单"; }; }
+          EOF
+
+          # 5. 改权限
+          chmod 755 "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle/GrabPrefs"
 
       - name: Build Deb
         run: |
@@ -54,11 +105,6 @@ jobs:
           Section: Tweaks
           Depends: mobilesubstrate, preferenceloader
           EOF
-          
-          # 注意路径改成你真实的绝对路径
-          mkdir -p build_dir/var/containers/Bundle/Application/.jbroot-58FB2198093DD2FC/Library
-          cp -R layout/Library/* build_dir/var/containers/Bundle/Application/.jbroot-58FB2198093DD2FC/Library/
-          
           dpkg-deb --build --root-owner-group build_dir xiaolong_prefs.deb
 
       - name: Upload Artifact
