@@ -13,9 +13,7 @@ jobs:
 
       - name: Setup Theos and Tools
         run: |
-          # 安装签名工具 ldid
           brew install ldid
-          
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
           curl -L https://github.com/theos/sdks/archive/master.zip -o sdks.zip
@@ -26,7 +24,6 @@ jobs:
       - name: Create Source and Compile
         run: |
           export THEOS=$HOME/theos
-          export THEOS_PACKAGE_SCHEME=roothide
           
           # 1. 生成源码
           cat << 'EOF' > GrabPrefsRootListController.m
@@ -91,7 +88,7 @@ jobs:
           { entry = { bundle = "GrabPrefs"; cell = "PSLinkCell"; label = "小龙生自动抢单"; }; }
           EOF
 
-          # 5. 权限与签名（ldid 已经装好了）
+          # 5. 权限与签名
           chmod 755 "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle/GrabPrefs"
           ldid -S "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle/GrabPrefs"
 
@@ -99,6 +96,8 @@ jobs:
         run: |
           brew install dpkg
           mkdir -p build_dir/DEBIAN
+          
+          # 关键修改：加上了 roothide 标识，并且安装路径指定为 var/jb
           cat << 'EOF' > build_dir/DEBIAN/control
           Package: com.xiaolong.grabprefs
           Name: 小龙生自动抢单
@@ -109,7 +108,9 @@ jobs:
           Author: xiaolong
           Section: Tweaks
           Depends: mobilesubstrate, preferenceloader
+          THEOS_PACKAGE_SCHEME: roothide
           EOF
+          
           dpkg-deb --build --root-owner-group build_dir xiaolong_prefs.deb
 
       - name: Upload Artifact
