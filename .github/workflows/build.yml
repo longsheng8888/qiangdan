@@ -1,4 +1,4 @@
-name: Build RootHide Deb
+name: Build Real Theos Prefs
 
 on:
   push:
@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Theos and Tools
+      - name: Setup Theos
         run: |
           brew install ldid dpkg
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
@@ -21,10 +21,27 @@ jobs:
           mkdir -p $HOME/theos/sdks
           cp -R sdks-master/iPhoneOS16.5.sdk $HOME/theos/sdks/
 
-      - name: Create Source and Compile
+      - name: Create Standard Theos Project
         run: |
-          export THEOS=$HOME/theos
-          
+          # 1. 在根目录生成 Makefile，强制使用 iphoneos-arm64
+          cat << 'EOF' > Makefile
+          ARCHS = arm64 arm64e
+          TARGET = iphone:clang:16.5:14.0
+          INSTALL_TARGET_PROCESSES = Preferences
+
+          include $(THEOS)/makefiles/common.mk
+
+          BUNDLE_NAME = GrabPrefs
+          GrabPrefs_FILES = GrabPrefsRootListController.m
+          GrabPrefs_FRAMEWORKS = UIKit Foundation
+          GrabPrefs_PRIVATE_FRAMEWORKS = Preferences
+          GrabPrefs_INSTALL_PATH = /Library/PreferenceBundles
+          GrabPrefs_CFLAGS = -fobjc-arc
+
+          include $(THEOS_MAKE_PATH)/bundle.mk
+          EOF
+
+          # 2. 生成源码
           cat << 'EOF' > GrabPrefsRootListController.m
           #import <Preferences/PSListController.h>
           @interface GrabPrefsRootListController : PSListController
@@ -39,22 +56,8 @@ jobs:
           @end
           EOF
 
-          mkdir -p layout/Library/PreferenceBundles/GrabPrefs.bundle
-          mkdir -p layout/Library/PreferenceLoader/Preferences
-          
-          xcrun -sdk iphoneos clang -fobjc-arc -dynamiclib \
-          -framework Foundation -framework UIKit \
-          -Wl,-undefined,dynamic_lookup \
-          -I$THEOS/include -I$THEOS/vendor/include \
-          -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
-          -arch arm64 -arch arm64e \
-          GrabPrefsRootListController.m \
-          -o layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
-          
-          chmod 755 layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
-          ldid -S layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
-          
-          cat << 'EOF' > layout/Library/PreferenceBundles/GrabPrefs.bundle/Root.plist
+          # 3. 生成带输入框的 Root.plist
+          cat << 'EOF' > Root.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -90,6 +93,8 @@ jobs:
           </plist>
           EOF
 
+          # 4. 生成入口文件
+          mkdir -p layout/Library/PreferenceLoader/Preferences
           cat << 'EOF' > layout/Library/PreferenceLoader/Preferences/GrabPrefs.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -107,25 +112,40 @@ jobs:
           </plist>
           EOF
 
-      - name: Build Deb
+      - name: Compile with Theos
         run: |
-          mkdir -p build_dir/DEBIAN
+          export THEOS=$HOME/theos
+          export PATH=$THEOS/bin:$PATH
+          make clean
+          make package FINALPACKAGE=1
+
+      - name: Build Final Deb with Correct Architecture
+        run: |
+          # 解压 Theos 编译出来的 deb，重新打上 iphoneos-arm64 标识
+          mkdir -p extract
+          find .theos -name "*.deb" -exec dpkg-deb -x {} extract/ \;
           
+          mkdir -p build_dir/DEBIAN
           cat << 'EOF' > build_dir/DEBIAN/control
           Package: com.xiaolong.grabprefs
           Name: 小龙生自动抢单
           Version: 1.0
           Architecture: iphoneos-arm64
-          Description: 抢单设置
+          Description: 抢单设置界面
           Maintainer: xiaolong
           Author: xiaolong
           Section: Tweaks
           Depends: mobilesubstrate, preferenceloader
           EOF
           
-          # 解决报错：先建好 var/jb 目录
-          mkdir -p build_dir/var/jb
-          cp -R layout/Library build_dir/var/jb/
+          # 复制编译好的文件（Theos 会自动放进 layout 或 rootless 目录）
+          cp -R extract/Library build_dir/
+          # 如果是 rootless 编译出来的，把 var/jb 里的移出来
+          if [ -d "extract/var/jb/Library" ]; then
+            mkdir -p build_dir/var/jb
+            cp -R extract/var/jb/Library build_dir/var/jb/
+            rm -rf build_dir/Library
+          fi
           
           dpkg-deb --build --root-owner-group build_dir xiaolong_prefs.deb
 
