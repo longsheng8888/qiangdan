@@ -24,7 +24,10 @@ jobs:
         run: |
           export THEOS=$HOME/theos
           
-          # 1. 直接在云端生成 .m 源码，你不建了！
+          # 关键：启用 roothide 专属打包模式
+          export THEOS_PACKAGE_SCHEME=roothide
+          
+          # 1. 生成源码
           cat << 'EOF' > GrabPrefsRootListController.m
           #import <Preferences/PSListController.h>
           @interface GrabPrefsRootListController : PSListController
@@ -40,11 +43,11 @@ jobs:
           EOF
 
           # 2. 建目录
-          TARGET_DIR="build_dir/var/containers/Bundle/Application/.jbroot-58FB2198093DD2FC/Library"
+          TARGET_DIR="build_dir/var/jb/Library"
           mkdir -p "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle"
           mkdir -p "$TARGET_DIR/PreferenceLoader/Preferences"
           
-          # 3. 编译
+          # 3. 编译并链接
           xcrun -sdk iphoneos clang -fobjc-arc -dynamiclib \
           -framework Foundation -framework UIKit \
           -Wl,-undefined,dynamic_lookup \
@@ -54,7 +57,7 @@ jobs:
           GrabPrefsRootListController.m \
           -o "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle/GrabPrefs"
           
-          # 4. 补全 Plist（如果你之前在根目录建了，这步会覆盖或生成）
+          # 4. 写 Plist
           cat << 'EOF' > "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle/Root.plist"
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -87,8 +90,10 @@ jobs:
           { entry = { bundle = "GrabPrefs"; cell = "PSLinkCell"; label = "小龙生自动抢单"; }; }
           EOF
 
-          # 5. 改权限
+          # 5. 权限与补丁（使用 ldid 强行签名）
           chmod 755 "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle/GrabPrefs"
+          # 云端自带 ldid，直接给动态库签名，骗过系统
+          ldid -S "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle/GrabPrefs"
 
       - name: Build Deb
         run: |
