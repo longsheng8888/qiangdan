@@ -1,4 +1,4 @@
-name: Build Real Theos Prefs
+name: Build Final Perfect Prefs
 
 on:
   push:
@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Theos
+      - name: Setup Theos and Tools
         run: |
           brew install ldid dpkg
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
@@ -21,40 +21,11 @@ jobs:
           mkdir -p $HOME/theos/sdks
           cp -R sdks-master/iPhoneOS16.5.sdk $HOME/theos/sdks/
 
-      - name: Create Standard Theos Project
+      - name: Create Source and Compile (Standalone)
         run: |
-          # 1. 生成 Theos 必须的 control 文件
-          cat << 'EOF' > control
-          Package: com.xiaolong.grabprefs
-          Name: 小龙生自动抢单
-          Version: 1.0
-          Architecture: iphoneos-arm64
-          Description: 抢单设置界面
-          Maintainer: xiaolong
-          Author: xiaolong
-          Section: Tweaks
-          Depends: mobilesubstrate, preferenceloader
-          EOF
-
-          # 2. 生成 Makefile
-          cat << 'EOF' > Makefile
-          ARCHS = arm64 arm64e
-          TARGET = iphone:clang:16.5:14.0
-          INSTALL_TARGET_PROCESSES = Preferences
-
-          include $(THEOS)/makefiles/common.mk
-
-          BUNDLE_NAME = GrabPrefs
-          GrabPrefs_FILES = GrabPrefsRootListController.m
-          GrabPrefs_FRAMEWORKS = UIKit Foundation
-          GrabPrefs_PRIVATE_FRAMEWORKS = Preferences
-          GrabPrefs_INSTALL_PATH = /Library/PreferenceBundles
-          GrabPrefs_CFLAGS = -fobjc-arc
-
-          include $(THEOS_MAKE_PATH)/bundle.mk
-          EOF
-
-          # 3. 生成源码
+          export THEOS=$HOME/theos
+          
+          # 1. 生成源码
           cat << 'EOF' > GrabPrefsRootListController.m
           #import <Preferences/PSListController.h>
           @interface GrabPrefsRootListController : PSListController
@@ -69,8 +40,25 @@ jobs:
           @end
           EOF
 
-          # 4. 生成带输入框的 Root.plist
-          cat << 'EOF' > Root.plist
+          # 2. 建正确的目录结构
+          mkdir -p build_dir/var/jb/Library/PreferenceBundles/GrabPrefs.bundle
+          mkdir -p build_dir/var/jb/Library/PreferenceLoader/Preferences
+          
+          # 3. 手动编译并签名
+          xcrun -sdk iphoneos clang -fobjc-arc -dynamiclib \
+          -framework Foundation -framework UIKit \
+          -Wl,-undefined,dynamic_lookup \
+          -I$THEOS/include -I$THEOS/vendor/include \
+          -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+          -arch arm64 -arch arm64e \
+          GrabPrefsRootListController.m \
+          -o build_dir/var/jb/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
+          
+          chmod 755 build_dir/var/jb/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
+          ldid -S build_dir/var/jb/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
+
+          # 4. 写入带输入框的 Plist
+          cat << 'EOF' > build_dir/var/jb/Library/PreferenceBundles/GrabPrefs.bundle/Root.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -106,9 +94,7 @@ jobs:
           </plist>
           EOF
 
-          # 5. 生成入口文件
-          mkdir -p layout/Library/PreferenceLoader/Preferences
-          cat << 'EOF' > layout/Library/PreferenceLoader/Preferences/GrabPrefs.plist
+          cat << 'EOF' > build_dir/var/jb/Library/PreferenceLoader/Preferences/GrabPrefs.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -125,15 +111,28 @@ jobs:
           </plist>
           EOF
 
-      - name: Compile with Theos
+      - name: Build Final Deb (Strict Arm64)
         run: |
-          export THEOS=$HOME/theos
-          export PATH=$THEOS/bin:$PATH
-          make clean
-          make package FINALPACKAGE=1
+          mkdir -p build_dir/DEBIAN
+          
+          # 强行锁死架构为 iphoneos-arm64，绝对不弹 Patcher
+          cat << 'EOF' > build_dir/DEBIAN/control
+          Package: com.xiaolong.grabprefs
+          Name: 小龙生自动抢单
+          Version: 1.0
+          Architecture: iphoneos-arm64
+          Description: 抢单设置界面
+          Maintainer: xiaolong
+          Author: xiaolong
+          Section: Tweaks
+          Depends: mobilesubstrate, preferenceloader
+          EOF
+          
+          # 直接打包，不走 Theos 的打包流程，避开一切自动转换
+          dpkg-deb --build --root-owner-group build_dir xiaolong_prefs.deb
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Prefs-Deb
-          path: packages/*.deb
+          path: xiaolong_prefs.deb
