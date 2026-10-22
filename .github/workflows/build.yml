@@ -11,8 +11,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Theos
+      - name: Setup Theos and Tools
         run: |
+          # 安装签名工具 ldid
+          brew install ldid
+          
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
           curl -L https://github.com/theos/sdks/archive/master.zip -o sdks.zip
@@ -23,8 +26,6 @@ jobs:
       - name: Create Source and Compile
         run: |
           export THEOS=$HOME/theos
-          
-          # 关键：启用 roothide 专属打包模式
           export THEOS_PACKAGE_SCHEME=roothide
           
           # 1. 生成源码
@@ -90,9 +91,8 @@ jobs:
           { entry = { bundle = "GrabPrefs"; cell = "PSLinkCell"; label = "小龙生自动抢单"; }; }
           EOF
 
-          # 5. 权限与补丁（使用 ldid 强行签名）
+          # 5. 权限与签名（ldid 已经装好了）
           chmod 755 "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle/GrabPrefs"
-          # 云端自带 ldid，直接给动态库签名，骗过系统
           ldid -S "$TARGET_DIR/PreferenceBundles/GrabPrefs.bundle/GrabPrefs"
 
       - name: Build Deb
