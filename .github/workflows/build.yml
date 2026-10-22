@@ -1,4 +1,4 @@
-name: Build Native RootHide Prefs
+name: Build RootHide Official Prefs
 
 on:
   push:
@@ -11,19 +11,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Theos and Tools
+      - name: Setup Official RootHide Theos
         run: |
-          brew install ldid
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          brew install ldid dpkg
+          # 关键：拉取 roothide 官方的 theos 分支
+          git clone -b roothide --recursive https://github.com/roothide/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          
+          # 下载官方 SDK
           curl -L https://github.com/theos/sdks/archive/master.zip -o sdks.zip
           unzip -q sdks.zip
           mkdir -p $HOME/theos/sdks
-          cp -R sdks-master/* $HOME/theos/sdks/
+          cp -R sdks-master/iPhoneOS16.5.sdk $HOME/theos/sdks/
 
       - name: Create Source and Compile
         run: |
           export THEOS=$HOME/theos
+          export THEOS_PACKAGE_SCHEME=roothide
+          export PATH=$THEOS/bin:$PATH
           
           # 1. 自动生成 .m 源码
           cat << 'EOF' > GrabPrefsRootListController.m
@@ -44,7 +49,7 @@ jobs:
           mkdir -p layout/Library/PreferenceBundles/GrabPrefs.bundle
           mkdir -p layout/Library/PreferenceLoader/Preferences
           
-          # 3. 编译并签名
+          # 3. 编译（roothide官方环境会处理路径）
           xcrun -sdk iphoneos clang -fobjc-arc -dynamiclib \
           -framework Foundation -framework UIKit \
           -Wl,-undefined,dynamic_lookup \
@@ -57,7 +62,7 @@ jobs:
           chmod 755 layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
           ldid -S layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
           
-          # 4. 自动生成带输入框的 Root.plist
+          # 4. 生成输入框 plist
           cat << 'EOF' > layout/Library/PreferenceBundles/GrabPrefs.bundle/Root.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -94,7 +99,7 @@ jobs:
           </plist>
           EOF
 
-          # 5. 自动生成入口 GrabPrefs.plist
+          # 5. 生成入口
           cat << 'EOF' > layout/Library/PreferenceLoader/Preferences/GrabPrefs.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -114,9 +119,9 @@ jobs:
 
       - name: Build RootHide Deb
         run: |
-          brew install dpkg
           mkdir -p build_dir/DEBIAN
           
+          # 这里的 Architecture 是关键！
           cat << 'EOF' > build_dir/DEBIAN/control
           Package: com.xiaolong.grabprefs
           Name: 小龙生自动抢单
@@ -129,6 +134,7 @@ jobs:
           Depends: mobilesubstrate, preferenceloader
           EOF
           
+          # 路径无缝映射到 roothide 的 var/jb
           cp -R layout/Library build_dir/
           
           dpkg-deb --build --root-owner-group build_dir xiaolong_prefs.deb
