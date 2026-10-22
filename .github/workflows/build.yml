@@ -23,7 +23,7 @@ jobs:
 
       - name: Create Standard Theos Project
         run: |
-          # 1. 生成 Theos 必须的 control 文件，强制 iphoneos-arm64
+          # 1. 生成 Theos 必须的 control 文件
           cat << 'EOF' > control
           Package: com.xiaolong.grabprefs
           Name: 小龙生自动抢单
@@ -132,27 +132,8 @@ jobs:
           make clean
           make package FINALPACKAGE=1
 
-      - name: Build Final Deb with Correct Architecture
-        run: |
-          # 解压 Theos 编译出来的 deb，重新打包，强行锁死 iphoneos-arm64
-          mkdir -p extract
-          find .theos -name "*.deb" -exec dpkg-deb -x {} extract/ \;
-          
-          mkdir -p build_dir/DEBIAN
-          cp control build_dir/DEBIAN/control
-          
-          # 复制编译好的文件（兼容 rootless 和 rootful 的结构）
-          if [ -d "extract/var/jb/Library" ]; then
-            mkdir -p build_dir/var/jb
-            cp -R extract/var/jb/Library build_dir/var/jb/
-          else
-            cp -R extract/Library build_dir/
-          fi
-          
-          dpkg-deb --build --root-owner-group build_dir xiaolong_prefs.deb
-
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Prefs-Deb
-          path: xiaolong_prefs.deb
+          path: packages/*.deb
