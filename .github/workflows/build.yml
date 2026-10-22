@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Theos and RootHide Tools
+      - name: Setup Theos and Tools
         run: |
           brew install ldid dpkg
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
@@ -20,15 +20,10 @@ jobs:
           unzip -q sdks.zip
           mkdir -p $HOME/theos/sdks
           cp -R sdks-master/iPhoneOS16.5.sdk $HOME/theos/sdks/
-          
-          # 关键：拉取 roothide 官方补丁包
-          git clone https://github.com/roothide/roothide-package.git $HOME/roothide-package
 
       - name: Create Source and Compile
         run: |
           export THEOS=$HOME/theos
-          export THEOS_PACKAGE_SCHEME=roothide
-          export PATH=$THEOS/bin:$PATH
           
           cat << 'EOF' > GrabPrefsRootListController.m
           #import <Preferences/PSListController.h>
@@ -59,18 +54,63 @@ jobs:
           chmod 755 layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
           ldid -S layout/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
           
-          # 自动生成之前的 plist（略过，用之前的即可）
-          # 直接把 plist 写在这里...
+          cat << 'EOF' > layout/Library/PreferenceBundles/GrabPrefs.bundle/Root.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>items</key>
+              <array>
+                  <dict>
+                      <key>cell</key><string>PSGroupCell</string>
+                      <key>label</key><string>小龙生抢单参数</string>
+                  </dict>
+                  <dict>
+                      <key>cell</key><string>PSTextFieldSpecifier</string>
+                      <key>label</key><string>最低金额 (元)</string>
+                      <key>key</key><string>minFee</string>
+                      <key>default</key><string>20</string>
+                      <key>KeyboardType</key><string>NumberPad</string>
+                  </dict>
+                  <dict>
+                      <key>cell</key><string>PSTextFieldSpecifier</string>
+                      <key>label</key><string>最大距离 (km)</string>
+                      <key>key</key><string>maxDist</string>
+                      <key>default</key><string>5</string>
+                      <key>KeyboardType</key><string>NumberPad</string>
+                  </dict>
+                  <dict>
+                      <key>cell</key><string>PSSwitchCell</string>
+                      <key>label</key><string>开启自动抢单</string>
+                      <key>key</key><string>enabled</string>
+                      <key>default</key><true/>
+                  </dict>
+              </array>
+          </dict>
+          </plist>
+          EOF
+
+          cat << 'EOF' > layout/Library/PreferenceLoader/Preferences/GrabPrefs.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>entry</key>
+              <dict>
+                  <key>bundle</key><string>GrabPrefs</string>
+                  <key>cell</key><string>PSLinkCell</string>
+                  <key>detail</key><string>GrabPrefsRootListController</string>
+                  <key>isController</key><string>1</string>
+                  <key>label</key><string>小龙生自动抢单</string>
+              </dict>
+          </dict>
+          </plist>
+          EOF
 
       - name: Build RootHide Deb
         run: |
-          # 使用 roothide 官方提供的脚本进行打补丁和打包
-          export THEOS_PACKAGE_SCHEME=roothide
-          
+          brew install dpkg
           mkdir -p build_dir/DEBIAN
-          mkdir -p build_dir/var/jb
-          
-          cp -R layout/Library build_dir/var/jb/
           
           cat << 'EOF' > build_dir/DEBIAN/control
           Package: com.xiaolong.grabprefs
@@ -84,8 +124,7 @@ jobs:
           Depends: mobilesubstrate, preferenceloader
           EOF
           
-          # 核心：用 roothide 官方工具打上签名补丁！
-          $HOME/roothide-package/roothide-patcher/patcher build_dir/var/jb/Library/PreferenceBundles/GrabPrefs.bundle/GrabPrefs
+          cp -R layout/Library build_dir/var/jb/
           
           dpkg-deb --build --root-owner-group build_dir xiaolong_prefs.deb
 
