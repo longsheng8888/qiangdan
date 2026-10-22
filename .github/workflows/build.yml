@@ -1,4 +1,4 @@
-name: Build Real RootHide Deb
+name: Build RootHide Deb
 
 on:
   push:
@@ -107,9 +107,8 @@ jobs:
           </plist>
           EOF
 
-      - name: Build RootHide Deb
+      - name: Build Deb
         run: |
-          brew install dpkg
           mkdir -p build_dir/DEBIAN
           
           cat << 'EOF' > build_dir/DEBIAN/control
@@ -124,6 +123,8 @@ jobs:
           Depends: mobilesubstrate, preferenceloader
           EOF
           
+          # 解决报错：先建好 var/jb 目录
+          mkdir -p build_dir/var/jb
           cp -R layout/Library build_dir/var/jb/
           
           dpkg-deb --build --root-owner-group build_dir xiaolong_prefs.deb
